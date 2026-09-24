@@ -1,280 +1,59 @@
 
-const STORAGE_KEY = "toeic_vocab_v1";
-const SETTINGS_KEY = "toeic_vocab_settings_v1";
-
-let words = loadWords();
-let queue = [];
-let qIndex = 0;
-let cardStartedAt = null;
-let revealed = false;
-
-const el = id => document.getElementById(id);
-
-function loadWords(){
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
-  catch { return []; }
+const K="toeic_vocab_v1", SK="toeic_vocab_v2_session", STEPS=[3,7,14,14];
+const $=id=>document.getElementById(id), today=()=>{let d=new Date();return new Date(d.getFullYear(),d.getMonth(),d.getDate()).getTime()}, add=(t,d)=>t+d*86400000;
+const sh=a=>{a=[...a];for(let i=a.length-1;i;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}, uq=a=>[...new Set(a)];
+function raw(){try{return JSON.parse(localStorage.getItem(K))||[]}catch{return[]}}
+let words=raw().map(w=>({id:w.id||crypto.randomUUID(),word:String(w.word||"").trim(),meaning:String(w.meaning||"").trim(),pos:String(w.pos||"").trim(),phrase:String(w.phrase||"").trim(),frequency:+w.frequency||1,status:w.status||(+w.seen===0?"unseen":w.lastResult==="again"?"unknown":w.lastResult==="hard"?"ambiguous":"known"),due:+w.due||today(),reviewStage:+w.reviewStage||0}));
+function blank(){return{date:today(),review:[],survey:[],mem:[],memNext:[],cor:[],corNext:[],remembered:[],revisit:null}}
+function loadS(){try{let s=JSON.parse(localStorage.getItem(SK));return !s||s.date!==today()?blank():{...blank(),...s}}catch{return blank()}}
+let s=loadS(), mode=null, active=null, revealed=false, pQ=[],pI=0;
+const save=()=>{localStorage.setItem(K,JSON.stringify(words));localStorage.setItem(SK,JSON.stringify(s))}, get=id=>words.find(w=>w.id===id);
+const stars=n=>n>1?"★".repeat(Math.min(n-1,8))+(n>9?`+${n-9}`:""):"", phrases=x=>String(x||"").split("@").map(x=>x.trim()).filter(Boolean);
+const label=x=>({unseen:"미학습",unknown:"모름",ambiguous:"애매",remembered:"기억",known:"앎"})[x]||x;
+function addU(k,id){if(!s[k].includes(id))s[k].push(id)}
+function dueRefresh(){let ids=words.filter(w=>["known","remembered"].includes(w.status)&&w.due<=today()).sort((a,b)=>a.due-b.due).map(w=>w.id);s.review=uq([...s.review.filter(x=>ids.includes(x)),...ids])}
+function memCount(){return uq([...s.mem,...s.memNext]).length} function corCount(){return uq([...s.cor,...s.corNext]).length}
+function phraseCards(){let out=[];for(let w of words)if(["remembered","known"].includes(w.status))for(let p of phrases(w.phrase))out.push({word:w.word,meaning:w.meaning,phrase:p});return out}
+function refresh(){
+ // Recover any unfinished learning states even after reload/reset.
+ for(let w of words){
+   if(w.status==="unknown" && ![...s.mem,...s.memNext].includes(w.id)) s.mem.push(w.id);
+   if(w.status==="ambiguous" && ![...s.cor,...s.corNext].includes(w.id)) s.cor.push(w.id);
+ }
+ dueRefresh(); save();
+ $("total").textContent=words.length;$("unseen").textContent=words.filter(w=>w.status==="unseen").length;$("due").textContent=s.review.length;$("amb").textContent=words.filter(w=>w.status==="ambiguous").length;
+ $("reviewMeta").textContent=s.review.length?`${s.review.length}개 예정`:"완료";$("memorizeMeta").textContent=memCount()?`${memCount()}개 남음 · 아직 / 외움`:"대상 없음";$("correctMeta").textContent=corCount()?`${corCount()}개 남음 · 애매 / 외움`:"대상 없음";
+ $("revisitMeta").textContent=s.remembered.length?(s.revisit?`${s.revisit.round}/3회 진행 중`:`${s.remembered.length}개 · 3회`):"대상 없음";
+ $("review").disabled=!s.review.length;$("memorize").disabled=!memCount();$("correct").disabled=!corCount();$("revisit").disabled=!s.remembered.length||corCount()>0;
+ $("phraseCount").textContent=`${phraseCards().length}개`;$("phrases").disabled=!phraseCards().length; renderList()
 }
-function saveWords(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(words));
-  refreshHome();
+function esc(x){return String(x).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function renderList(){let q=$("search").value.toLowerCase().trim(),f=$("filter").value;let a=words.filter(w=>(f==="all"||w.status===f)&&(!q||[w.word,w.meaning,w.pos,w.phrase].join(" ").toLowerCase().includes(q))).sort((a,b)=>a.word.localeCompare(b.word));$("list").innerHTML=a.slice(0,400).map(w=>`<div class="item"><div class="ih"><b>${esc(w.word)} ${stars(w.frequency)}</b><span class="pill">${label(w.status)}</span></div><div>${esc(w.meaning)}</div><small>${esc(w.pos)}${w.phrase?" · "+esc(w.phrase):""}</small></div>`).join("")||'<p class="muted">단어 없음</p>'}
+function q(){return mode==="review"?s.review:mode==="survey"?s.survey:mode==="memorize"?s.mem:mode==="correct"?s.cor:mode==="revisit"?(s.revisit?.current||[]):[]}
+const info={review:["REVIEW","복습하기",[["ambiguous","애매","mid"],["known","앎","good"]],"애매는 오늘 바로잡기에 들어갑니다."],survey:["NEW","톺아보기",[["unknown","모름","bad"],["ambiguous","애매","mid"],["known","앎","good"]],"오늘 새 단어를 처음 분류합니다."],memorize:["MEMORIZE","암기하기",[["still","아직","bad"],["memorized","외움","good"]],"남은 단어만 세트마다 셔플합니다."],correct:["CORRECT","바로잡기",[["ambiguous","애매","mid"],["memorized","외움","good"]],"외움 → 기억으로 승격합니다."],revisit:["REVISIT","다시보기",[["unfamiliar","낯섦","mid"],["familiar","익숙","good"]],"정확히 3회. 한 번이라도 낯설면 다음 날 복습합니다."]};
+function openMode(m){mode=m;if(m==="memorize"&&!s.mem.length&&s.memNext.length){s.mem=sh(uq(s.memNext));s.memNext=[]}if(m==="correct"&&!s.cor.length&&s.corNext.length){s.cor=sh(uq(s.corNext));s.corNext=[]}if(m==="revisit"&&!s.revisit)s.revisit={round:1,current:sh(uq(s.remembered)),bad:{}};$("home").classList.remove("on");$("study").classList.add("on");renderCard()}
+function closeMode(){$("study").classList.remove("on");$("home").classList.add("on");mode=null;active=null;save();refresh()}
+function renderCard(){let a=q();if(!a.length){alert(info[mode][1]+" 완료!");closeMode();return}active=a[0];let w=get(active);if(!w){a.shift();return renderCard()}revealed=false;$("modeSmall").textContent=info[mode][0];$("modeTitle").textContent=info[mode][1];$("note").textContent=info[mode][3];$("progress").textContent=mode==="revisit"?`${s.revisit.round}/3`:`${a.length}개 남음`;$("stars").textContent=$("stars2").textContent=stars(w.frequency);$("pos").textContent=$("pos2").textContent=w.pos;$("word").textContent=$("word2").textContent=w.word;$("meaning").textContent=w.meaning;$("phraseText").textContent=phrases(w.phrase).join("\n");$("front").classList.remove("hide");$("back").classList.add("hide");buttons(false)}
+function buttons(on){let defs=info[mode][2];$("buttons").className=defs.length===3?"cols3":"cols2";$("buttons").innerHTML=defs.map(x=>`<button class="${x[2]}" data-a="${x[0]}" ${on?"":"disabled"}>${x[1]}</button>`).join("");$("buttons").querySelectorAll("button").forEach(b=>b.onclick=()=>act(b.dataset.a))}
+function reveal(){if(revealed)return;revealed=true;$("front").classList.add("hide");$("back").classList.remove("hide");buttons(true)}
+function act(a){let id=active,w=get(id);
+ if(mode==="review"){s.review.shift();if(a==="ambiguous"){w.status="ambiguous";w.reviewStage=0;addU("cor",id)}else if(w.status==="remembered"){w.status="known";w.reviewStage=0;w.due=add(today(),3)}else{w.status="known";w.reviewStage=Math.min((w.reviewStage||0)+1,3);w.due=add(today(),STEPS[w.reviewStage])}}
+ if(mode==="survey"){s.survey.shift();if(a==="unknown"){w.status="unknown";addU("mem",id)}else if(a==="ambiguous"){w.status="ambiguous";addU("cor",id)}else{w.status="known";w.reviewStage=0;w.due=add(today(),3)}}
+ if(mode==="memorize"){s.mem.shift();if(a==="still"){w.status="unknown";addU("memNext",id)}else{w.status="ambiguous";addU("cor",id)}if(!s.mem.length&&s.memNext.length){s.mem=sh(uq(s.memNext));s.memNext=[]}}
+ if(mode==="correct"){s.cor.shift();if(a==="ambiguous"){w.status="ambiguous";addU("corNext",id)}else{w.status="remembered";w.reviewStage=0;addU("remembered",id)}if(!s.cor.length&&s.corNext.length){s.cor=sh(uq(s.corNext));s.corNext=[]}}
+ if(mode==="revisit"){let r=s.revisit;r.current.shift();if(a==="unfamiliar")r.bad[id]=true;if(!r.current.length){if(r.round<3){r.round++;r.current=sh(uq(s.remembered))}else{for(let x of uq(s.remembered)){let z=get(x);if(r.bad[x]){z.status="remembered";z.due=add(today(),1);z.reviewStage=0}else{z.status="known";z.due=add(today(),3);z.reviewStage=0}}s.remembered=[];s.revisit=null}}}
+ save();refresh();renderCard()
 }
-function todayKey(d=new Date()){
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-}
-function addDays(ts, days){ return ts + days*86400000; }
-
-function normalizeWord(row){
-  return {
-    id: row.id || crypto.randomUUID(),
-    word: String(row.word || "").trim(),
-    meaning: String(row.meaning || "").trim(),
-    pos: String(row.pos || "").trim(),
-    phrase: String(row.phrase || "").trim(),
-    level: Number(row.level || 0),
-    due: Number(row.due || todayKey()),
-    lastResult: row.lastResult || "",
-    lapses: Number(row.lapses || 0),
-    seen: Number(row.seen || 0),
-    avgMs: Number(row.avgMs || 0)
-  };
-}
-
-function refreshHome(){
-  const t = todayKey();
-  el("totalCount").textContent = words.length;
-  el("dueCount").textContent = words.filter(w => w.seen > 0 && w.due <= t).length;
-  el("newCount").textContent = words.filter(w => w.seen === 0).length;
-  el("hardCount").textContent = words.filter(w => w.lastResult === "again" || w.lastResult === "hard").length;
-  renderWordList();
-}
-
-function renderWordList(){
-  const q = el("searchInput").value.trim().toLowerCase();
-  const list = words.filter(w => !q || [w.word,w.meaning,w.pos,w.phrase].join(" ").toLowerCase().includes(q));
-  el("wordList").innerHTML = list.slice(0,300).map(w => `
-    <div class="word-item">
-      <strong>${escapeHtml(w.word)}</strong>
-      <div>${escapeHtml(w.meaning)}</div>
-      <small>${escapeHtml(w.pos)}${w.phrase ? " · "+escapeHtml(w.phrase) : ""}</small>
-    </div>
-  `).join("") || `<p class="muted">단어가 없습니다.</p>`;
-}
-
-function escapeHtml(s){
-  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-}
-
-function buildTodayQueue(){
-  const t = todayKey();
-  const limit = Math.max(0, Number(el("newLimit").value || 0));
-  const due = words.filter(w => w.seen > 0 && w.due <= t)
-                   .sort((a,b)=>a.due-b.due || b.lapses-a.lapses);
-  const fresh = words.filter(w => w.seen === 0).slice(0, limit);
-  return [...due, ...fresh];
-}
-function buildHardQueue(){
-  return words.filter(w => w.lastResult === "again" || w.lastResult === "hard")
-              .sort((a,b)=>b.lapses-a.lapses || a.due-b.due);
-}
-
-function startStudy(customQueue){
-  queue = customQueue;
-  qIndex = 0;
-  if(!queue.length){ alert("복습할 단어가 없습니다."); return; }
-  el("homeView").classList.remove("active");
-  el("studyView").classList.add("active");
-  showCard();
-}
-function showCard(){
-  if(qIndex >= queue.length){ finishStudy(); return; }
-  const w = queue[qIndex];
-  revealed = false;
-  cardStartedAt = performance.now();
-  el("front").classList.remove("hidden");
-  el("back").classList.add("hidden");
-  el("ratingArea").classList.add("hidden");
-  el("wordText").textContent = w.word;
-  el("wordTextBack").textContent = w.word;
-  el("meaningText").textContent = w.meaning;
-  el("posBadge").textContent = w.pos;
-  el("posBadgeBack").textContent = w.pos;
-  el("phraseFront").textContent = w.phrase ? `표현: ${w.phrase}` : "";
-  el("phraseText").textContent = w.phrase ? `표현: ${w.phrase}` : "";
-  el("progressText").textContent = `${qIndex+1} / ${queue.length}`;
-}
-function reveal(){
-  if(revealed) return;
-  revealed = true;
-  const ms = Math.round(performance.now() - cardStartedAt);
-  el("front").classList.add("hidden");
-  el("back").classList.remove("hidden");
-  el("ratingArea").classList.remove("hidden");
-  el("responseTime").textContent = `확인까지 ${(ms/1000).toFixed(1)}초`;
-  queue[qIndex]._lastMs = ms;
-}
-function rate(result){
-  const qWord = queue[qIndex];
-  const idx = words.findIndex(w => w.id === qWord.id);
-  if(idx < 0) return;
-  const w = words[idx];
-  const ms = qWord._lastMs || 0;
-  w.seen += 1;
-  w.avgMs = w.avgMs ? Math.round(w.avgMs*0.7 + ms*0.3) : ms;
-  w.lastResult = result;
-
-  // Simple spaced repetition tuned for vocabulary:
-  // slow recall (>4s) is treated one step harder.
-  let effective = result;
-  if(result === "good" && ms > 4000) effective = "hard";
-  if(result === "hard" && ms > 7000) effective = "again";
-
-  if(effective === "again"){
-    w.level = Math.max(0, w.level - 1);
-    w.lapses += 1;
-    w.due = todayKey(); // same day; appears next session
-  } else if(effective === "hard"){
-    w.level = Math.max(1, w.level);
-    w.due = addDays(todayKey(), 1);
-  } else {
-    w.level += 1;
-    const intervals = [1,2,4,7,14,30,60,120];
-    const days = intervals[Math.min(w.level-1, intervals.length-1)];
-    w.due = addDays(todayKey(), days);
-  }
-  words[idx] = w;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(words));
-  qIndex++;
-  showCard();
-}
-function finishStudy(){
-  saveWords();
-  el("studyView").classList.remove("active");
-  el("homeView").classList.add("active");
-  alert("오늘 복습 완료!");
-}
-
-function parseCSV(text){
-  // Handles quoted CSV fields and commas/newlines inside quotes.
-  const rows = [];
-  let row=[], field="", inQuotes=false;
-  for(let i=0;i<text.length;i++){
-    const c=text[i], n=text[i+1];
-    if(c === '"' && inQuotes && n === '"'){ field+='"'; i++; }
-    else if(c === '"'){ inQuotes=!inQuotes; }
-    else if(c === ',' && !inQuotes){ row.push(field); field=""; }
-    else if((c === '\n' || c === '\r') && !inQuotes){
-      if(c === '\r' && n === '\n') i++;
-      row.push(field); field="";
-      if(row.some(x => x.trim() !== "")) rows.push(row);
-      row=[];
-    } else field += c;
-  }
-  row.push(field);
-  if(row.some(x => x.trim() !== "")) rows.push(row);
-  return rows;
-}
-function importCSV(text){
-  const rows = parseCSV(text);
-  if(rows.length < 2) throw new Error("CSV 내용이 비어 있습니다.");
-  const headers = rows[0].map(h => h.trim().toLowerCase());
-  const aliases = {
-    word:["word","단어","english"],
-    meaning:["meaning","뜻","korean"],
-    pos:["pos","품사","partofspeech","part_of_speech"],
-    phrase:["phrase","숙어","표현","collocation"]
-  };
-  const col = {};
-  for(const [key,names] of Object.entries(aliases)){
-    col[key] = headers.findIndex(h => names.includes(h));
-  }
-  if(col.word < 0 || col.meaning < 0) throw new Error("word(단어), meaning(뜻) 열은 반드시 필요합니다.");
-
-  const byWord = new Map(words.map(w => [w.word.toLowerCase(), w]));
-  let added=0, updated=0;
-  for(const r of rows.slice(1)){
-    const raw = {
-      word: r[col.word] ?? "",
-      meaning: r[col.meaning] ?? "",
-      pos: col.pos >= 0 ? (r[col.pos] ?? "") : "",
-      phrase: col.phrase >= 0 ? (r[col.phrase] ?? "") : ""
-    };
-    if(!raw.word.trim()) continue;
-    const key = raw.word.trim().toLowerCase();
-    if(byWord.has(key)){
-      const old = byWord.get(key);
-      old.meaning = raw.meaning.trim() || old.meaning;
-      old.pos = raw.pos.trim() || old.pos;
-      old.phrase = raw.phrase.trim() || old.phrase;
-      updated++;
-    } else {
-      const nw = normalizeWord(raw);
-      words.push(nw);
-      byWord.set(key,nw);
-      added++;
-    }
-  }
-  saveWords();
-  return {added,updated};
-}
-function csvEscape(v){
-  v = String(v ?? "");
-  return /[",\n\r]/.test(v) ? `"${v.replaceAll('"','""')}"` : v;
-}
-function download(filename, text, type="text/plain;charset=utf-8"){
-  const blob = new Blob([text], {type});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),500);
-}
-
-el("studyCard").addEventListener("click", reveal);
-document.querySelectorAll("[data-rate]").forEach(b => b.addEventListener("click", e => {
-  e.stopPropagation(); rate(b.dataset.rate);
-}));
-el("startBtn").addEventListener("click", ()=>startStudy(buildTodayQueue()));
-el("hardBtn").addEventListener("click", ()=>startStudy(buildHardQueue()));
-el("backBtn").addEventListener("click", finishStudy);
-el("searchInput").addEventListener("input", renderWordList);
-
-el("csvInput").addEventListener("change", async e => {
-  const f = e.target.files[0];
-  if(!f) return;
-  try{
-    const text = await f.text();
-    const {added,updated} = importCSV(text);
-    el("importMsg").textContent = `${added}개 추가, ${updated}개 업데이트됨`;
-  }catch(err){
-    el("importMsg").textContent = "오류: " + err.message;
-  }
-  e.target.value="";
-});
-
-el("downloadTemplateBtn").addEventListener("click", ()=>{
-  const sample = [
-    ["word","meaning","pos","phrase"],
-    ["responsible","책임이 있는","adj","be responsible for"],
-    ["applicant","지원자","n","job applicant"],
-    ["postpone","연기하다","v","postpone a meeting"]
-  ].map(r=>r.map(csvEscape).join(",")).join("\n");
-  download("toeic_vocab_template.csv", "\ufeff"+sample, "text/csv;charset=utf-8");
-});
-
-el("exportBtn").addEventListener("click", ()=>{
-  const headers=["word","meaning","pos","phrase","level","due","lastResult","lapses","seen","avgMs"];
-  const lines=[headers.join(",")];
-  for(const w of words){
-    lines.push(headers.map(h=>csvEscape(w[h])).join(","));
-  }
-  download("toeic_vocab_backup.csv", "\ufeff"+lines.join("\n"), "text/csv;charset=utf-8");
-});
-
-el("themeBtn").addEventListener("click", ()=>{
-  document.body.classList.toggle("dark");
-  localStorage.setItem("toeic_vocab_theme", document.body.classList.contains("dark") ? "dark":"light");
-});
-if(localStorage.getItem("toeic_vocab_theme")==="dark") document.body.classList.add("dark");
-
-if("serviceWorker" in navigator){
-  navigator.serviceWorker.register("./sw.js").catch(()=>{});
-}
-refreshHome();
+function startSurvey(){if(s.survey.length)return openMode("survey");let n=Math.max(0,Math.min(200,+$("limit").value||0)),ids=words.filter(w=>w.status==="unseen").slice(0,n).map(w=>w.id);if(!ids.length)return alert("새로 볼 단어가 없습니다.");s.survey=ids;save();openMode("survey")}
+function parseCSV(t){let rows=[],row=[],field="",quote=false;for(let i=0;i<t.length;i++){let c=t[i],n=t[i+1];if(c=='"'&&quote&&n=='"'){field+='"';i++}else if(c=='"')quote=!quote;else if(c==","&&!quote){row.push(field);field=""}else if((c=="\n"||c=="\r")&&!quote){if(c=="\r"&&n=="\n")i++;row.push(field);field="";if(row.some(x=>x.trim()))rows.push(row);row=[]}else field+=c}row.push(field);if(row.some(x=>x.trim()))rows.push(row);return rows}
+function merge(v,sep){let out=[];for(let x of v){for(let p of (sep===" @ "?phrases(x):String(x||"").split(";").map(y=>y.trim()).filter(Boolean)))if(!out.some(y=>y.toLowerCase()===p.toLowerCase()))out.push(p)}return out.join(sep)}
+function importCSV(t){let r=parseCSV(t);if(r.length<2)throw Error("CSV가 비어 있습니다.");let h=r[0].map(x=>x.replace(/^\ufeff/,"").trim().toLowerCase()), aliases={word:["word","단어","english"],meaning:["meaning","뜻","korean"],pos:["pos","품사"],phrase:["phrase","숙어","표현","collocation"]},c={};for(let k in aliases)c[k]=h.findIndex(x=>aliases[k].includes(x));if(c.word<0||c.meaning<0)throw Error("word, meaning 열이 필요합니다.");let g=new Map;for(let row of r.slice(1)){let word=String(row[c.word]||"").trim();if(!word)continue;let k=word.toLowerCase();if(!g.has(k))g.set(k,{word,m:[],p:[],ph:[],n:0});let z=g.get(k);z.n++;z.m.push(row[c.meaning]||"");if(c.pos>=0)z.p.push(row[c.pos]||"");if(c.phrase>=0)z.ph.push(row[c.phrase]||"")}let ex=new Map(words.map(w=>[w.word.toLowerCase(),w])),added=0,updated=0;for(let[k,z]of g){let data={word:z.word,meaning:merge(z.m,"; "),pos:merge(z.p,"; "),phrase:merge(z.ph," @ "),frequency:z.n};if(ex.has(k)){Object.assign(ex.get(k),{meaning:data.meaning||ex.get(k).meaning,pos:data.pos||ex.get(k).pos,phrase:data.phrase||ex.get(k).phrase,frequency:z.n});updated++}else{words.push({id:crypto.randomUUID(),...data,status:"unseen",due:today(),reviewStage:0});added++}}save();refresh();return{added,updated,total:g.size}}
+function csvE(v){v=String(v??"");return /[",\n\r]/.test(v)?`"${v.replaceAll('"','""')}"`:v}function dl(name,text){let b=new Blob([text],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
+function startP(){pQ=sh(phraseCards());pI=0;if(!pQ.length)return alert("표현 없음");$("home").classList.remove("on");$("phraseView").classList.add("on");renderP()}function renderP(){if(pI>=pQ.length){alert("표현 익히기 완료!");return closeP()}let x=pQ[pI];$("phraseProg").textContent=`${pI+1}/${pQ.length}`;$("pWord").textContent=x.word;$("pMain").textContent=x.phrase;$("pMeaning").textContent=x.meaning}function closeP(){$("phraseView").classList.remove("on");$("home").classList.add("on")}
+$("card").onclick=reveal;$("exit").onclick=closeMode;$("review").onclick=()=>openMode("review");$("survey").onclick=startSurvey;$("memorize").onclick=()=>openMode("memorize");$("correct").onclick=()=>openMode("correct");$("revisit").onclick=()=>openMode("revisit");$("phrases").onclick=startP;$("exitPhrase").onclick=closeP;$("nextPhrase").onclick=()=>{pI++;renderP()};$("search").oninput=renderList;$("filter").onchange=renderList;
+$("reset").onclick=()=>{if(confirm("오늘 진행 큐만 초기화할까요? 단어 상태와 복습 기록은 유지됩니다.")){s=blank();save();refresh()}};
+$("csv").onchange=async e=>{let f=e.target.files[0];if(!f)return;try{let z=importCSV(await f.text());$("msg").textContent=`${z.added}개 추가, ${z.updated}개 업데이트 · 고유 단어 ${z.total}개`}catch(err){$("msg").textContent="오류: "+err.message}e.target.value=""};
+$("template").onclick=()=>dl("toeic_vocab_v2_template.csv","\ufeffword,meaning,pos,phrase\napplication,\"신청서, 지원서\",n,complete an application @ submit an application @ receive an application\napplication,지원서,n,job application\nresponsible,책임이 있는,adj,be responsible for");
+$("export").onclick=()=>{let h=["word","meaning","pos","phrase","frequency","status","due","reviewStage"],lines=[h.join(",")];for(let w of words)lines.push(h.map(k=>csvE(w[k])).join(","));dl("toeic_vocab_v2_backup.csv","\ufeff"+lines.join("\n"))};
+$("theme").onclick=()=>{document.body.classList.toggle("dark");localStorage.setItem("toeic_vocab_theme",document.body.classList.contains("dark")?"dark":"light")};if(localStorage.getItem("toeic_vocab_theme")==="dark")document.body.classList.add("dark");
+if("serviceWorker"in navigator)navigator.serviceWorker.register("./sw.js").catch(()=>{});save();refresh();

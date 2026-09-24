@@ -1,90 +1,20 @@
-<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <meta name="theme-color" content="#111827" />
-  <title>TOEIC Vocab</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="style.css">
-</head>
-<body>
-  <header class="app-header">
-    <div>
-      <h1>TOEIC Vocab</h1>
-      <p>CSV로 넣고, 오늘 외울 것만 복습</p>
-    </div>
-    <button id="themeBtn" class="ghost">◐</button>
-  </header>
-
-  <main>
-    <section id="homeView" class="view active">
-      <div class="stats-grid">
-        <div class="stat"><span>전체</span><strong id="totalCount">0</strong></div>
-        <div class="stat"><span>오늘 복습</span><strong id="dueCount">0</strong></div>
-        <div class="stat"><span>미학습</span><strong id="newCount">0</strong></div>
-        <div class="stat"><span>어려움</span><strong id="hardCount">0</strong></div>
-      </div>
-
-      <div class="card">
-        <h2>오늘 공부</h2>
-        <label class="row">
-          <span>새 단어 포함 수</span>
-          <input id="newLimit" type="number" min="0" max="100" value="20">
-        </label>
-        <button id="startBtn" class="primary wide">오늘 복습 시작</button>
-        <button id="hardBtn" class="secondary wide">어려운 단어만 복습</button>
-      </div>
-
-      <div class="card">
-        <h2>CSV 가져오기</h2>
-        <p class="muted">권장 열: <code>word,meaning,pos,phrase</code></p>
-        <input id="csvInput" type="file" accept=".csv,text/csv">
-        <div class="button-row">
-          <button id="downloadTemplateBtn" class="ghost">CSV 예시 받기</button>
-          <button id="exportBtn" class="ghost">내 데이터 내보내기</button>
-        </div>
-        <p id="importMsg" class="muted"></p>
-      </div>
-
-      <div class="card">
-        <h2>단어 관리</h2>
-        <input id="searchInput" type="search" placeholder="단어 / 뜻 / 숙어 검색">
-        <div id="wordList" class="word-list"></div>
-      </div>
-    </section>
-
-    <section id="studyView" class="view">
-      <div class="study-top">
-        <button id="backBtn" class="ghost">← 종료</button>
-        <span id="progressText">0 / 0</span>
-      </div>
-
-      <div id="studyCard" class="study-card">
-        <div id="front">
-          <div class="badge" id="posBadge"></div>
-          <h2 id="wordText"></h2>
-          <p id="phraseFront" class="phrase"></p>
-          <p class="hint">탭해서 뜻 보기</p>
-        </div>
-        <div id="back" class="hidden">
-          <div class="badge" id="posBadgeBack"></div>
-          <h2 id="wordTextBack"></h2>
-          <p id="meaningText" class="meaning"></p>
-          <p id="phraseText" class="phrase"></p>
-          <p id="responseTime" class="muted"></p>
-        </div>
-      </div>
-
-      <div id="ratingArea" class="rating hidden">
-        <button data-rate="again" class="rate again">모름</button>
-        <button data-rate="hard" class="rate hard">애매</button>
-        <button data-rate="good" class="rate good">앎</button>
-      </div>
-    </section>
-  </main>
-
-  <script src="app.js"></script>
-</body>
-</html>
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#111827"><title>TOEIC Vocab v2</title><link rel="manifest" href="manifest.webmanifest"><link rel="stylesheet" href="style.css"></head><body>
+<header><div><small>TOEIC VOCAB v2</small><h1>단어 학습</h1><p>복습 → 톺아보기 → 암기하기 → 바로잡기 → 다시보기</p></div><button id="theme">◐</button></header>
+<main>
+<section id="home" class="view on">
+<div class="stats"><div><span>전체</span><b id="total">0</b></div><div><span>미학습</span><b id="unseen">0</b></div><div><span>오늘 복습</span><b id="due">0</b></div><div><span>애매</span><b id="amb">0</b></div></div>
+<div class="card"><div class="head"><h2>오늘 학습</h2><button class="ghost tiny" id="reset">오늘 진행 초기화</button></div>
+<button class="step" id="review"><b>1. 복습하기</b><span id="reviewMeta">애매 / 앎</span></button>
+<div class="step"><div><b>2. 톺아보기</b><span>모름 / 애매 / 앎</span></div><div class="inline"><input id="limit" type="number" min="0" max="200" value="20"><button id="survey">시작</button></div></div>
+<button class="step" id="memorize"><b>3. 암기하기</b><span id="memorizeMeta">아직 / 외움</span></button>
+<button class="step" id="correct"><b>4. 바로잡기</b><span id="correctMeta">애매 / 외움</span></button>
+<button class="step" id="revisit"><b>5. 다시보기</b><span id="revisitMeta">낯섦 / 익숙</span></button>
+</div>
+<div class="card"><div class="head"><h2>표현 익히기</h2><span class="pill" id="phraseCount">0개</span></div><p class="muted">기억/앎 단어의 phrase를 @ 기준으로 나눠 셔플해 한 번씩 봅니다.</p><button id="phrases" class="wide">표현 카드 보기</button></div>
+<div class="card"><h2>CSV 가져오기</h2><p class="muted">word, meaning, pos, phrase · phrase 여러 개는 @ 로 구분</p><input id="csv" type="file" accept=".csv,text/csv"><div class="row"><button class="ghost" id="template">CSV 예시</button><button class="ghost" id="export">백업 CSV</button></div><p id="msg" class="muted"></p></div>
+<div class="card"><div class="head"><h2>단어 목록</h2><select id="filter"><option value="all">전체</option><option value="unseen">미학습</option><option value="unknown">모름</option><option value="ambiguous">애매</option><option value="remembered">기억</option><option value="known">앎</option></select></div><input id="search" type="search" placeholder="단어 / 뜻 / phrase 검색"><div id="list"></div></div>
+</section>
+<section id="study" class="view"><div class="top"><button class="ghost" id="exit">← 홈</button><div><small id="modeSmall"></small><b id="modeTitle"></b></div><span class="pill" id="progress"></span></div>
+<div id="card" class="flash"><div id="front"><span id="stars"></span><small id="pos"></small><h2 id="word"></h2><p class="muted">눌러서 뜻 확인</p></div><div id="back" class="hide"><span id="stars2"></span><small id="pos2"></small><h2 id="word2"></h2><h3 id="meaning"></h3><p id="phraseText"></p></div></div><div id="buttons"></div><p id="note" class="muted center"></p></section>
+<section id="phraseView" class="view"><div class="top"><button class="ghost" id="exitPhrase">← 홈</button><b>표현 익히기</b><span class="pill" id="phraseProg"></span></div><div class="phrasecard"><small id="pWord"></small><h2 id="pMain"></h2><p id="pMeaning" class="muted"></p></div><button class="wide" id="nextPhrase">다음 표현</button></section>
+</main><script src="app.js"></script></body></html>
